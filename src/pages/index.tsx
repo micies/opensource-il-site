@@ -10,6 +10,7 @@ import { CompanyProps, DataProps, RepoProps, Views } from "@/types/index.types";
 import Modal from "@/components/HelpModal";
 import OrgIcon from "@/components/Icons/OrgIcon";
 import ReposIcon from "@/components/Icons/ReposIcon";
+import { get } from "@/utils/baseService";
 
 
 const DEFAULT_READ_ME_PLACEHOLDER = `<div dir="rtl" style="font-size: 18px; font-family: 'Rubik'">בחרו ב-Repository מהרשימה כדי לקרוא את קובץ ה-README שלו!</div>`;
@@ -39,63 +40,24 @@ export default function Home() {
   }, []);
 
   const fetchCompanies = async () => {
-    const res = await fetch("https://os-il-api.vercel.app/api/allcomps");
-    const data = await res.json();
-    setCompanies(data);
+    const companiesList = await get ("https://os-il-api.vercel.app/api/allcomps");
+    try{
+      setCompanies(companiesList);
+    }catch(error){
+      setLoading(false);
+      setReadmePreview(companiesList.message)
+    }
   };
 
   const fetchRepos = async () => {
-    const res = await fetch("https://os-il-api.vercel.app/api/reposdb");
-    const data: { repository: RepoProps }[] = await res.json();
 
-    const organizedData = data
-      .filter((proj) => proj !== null)
-      .map((proj) => {
-        const repo = proj.repository;
-
-        const nameWithOwner = repo.nameWithOwner;
-        const image = repo.openGraphImageUrl;
-        const description = repo.description ?? "";
-        const lastCommit = repo.defaultBranchRef
-          ? repo.defaultBranchRef.target.committedDate
-          : "1970-01-01T00:00:00Z";
-        const stargazerCount = repo.stargazerCount;
-        const issuesCount = repo.openIssues.totalCount;
-        const languages = repo.languages.edges.map((lang) => ({
-          name: lang.node.name,
-          size: lang.size,
-        }));
-        const totalSize = repo.languages.totalSize;
-
-        return {
-          id: crypto.randomUUID(),
-          image: image,
-          owner: nameWithOwner.split("/")[0],
-          name: nameWithOwner.split("/")[1],
-          description: description,
-          lastCommit: lastCommit,
-          stars: stargazerCount,
-          issuesCount: issuesCount,
-          languages: languages,
-          totalSize: totalSize,
-        };
-      });
-
-    setData(organizedData.sort(defaultSort));
-    setShowData(organizedData.sort(defaultSort));
-    setLoading(false);
-    setReadmePreview(DEFAULT_READ_ME_PLACEHOLDER);
-  };
-
-  const fetchCompanyRepos = async (company: string) => {
-    setLoading(true);
-    const res = await fetch(
-      `https://os-il-api.vercel.app/api/company/${company}`
-    );
-    const data = await res.json();
-    setShowData(
-      (data.organization.repositories.nodes as RepoProps[])
-        .map((repo) => {
+    const repositories : { message?: string; repository: RepoProps }[] = await get ("https://os-il-api.vercel.app/api/reposdb1");
+    try{
+      const organizedData = repositories
+        .filter((proj) => proj !== null)
+        .map((proj) => {
+          const repo = proj.repository;
+  
           const nameWithOwner = repo.nameWithOwner;
           const image = repo.openGraphImageUrl;
           const description = repo.description ?? "";
@@ -109,7 +71,7 @@ export default function Home() {
             size: lang.size,
           }));
           const totalSize = repo.languages.totalSize;
-
+  
           return {
             id: crypto.randomUUID(),
             image: image,
@@ -122,31 +84,92 @@ export default function Home() {
             languages: languages,
             totalSize: totalSize,
           };
-        })
-        .filter((repo: DataProps) => repo.name != ".github")
-        .sort(defaultSort)
-    );
-    setView("repos");
-    setLoading(false);
+        });
+  
+      setData(organizedData.sort(defaultSort));
+      setShowData(organizedData.sort(defaultSort));
+      setLoading(false);
+      setReadmePreview(DEFAULT_READ_ME_PLACEHOLDER);
+    }
+    catch (error) {
+        setReadmePreview(repositories.message)  
+        setLoading(false);
+      }
   };
+
+  const fetchCompanyRepos = async (company: string) => {
+    setLoading(true);
+    const companyRepos = await get(
+      `https://os-il-api.vercel.app/api/company/${company}`
+    );
+    try {
+      setShowData(
+        (companyRepos.organization.repositories.nodes as RepoProps[])
+          .map((repo) => {
+            const nameWithOwner = repo.nameWithOwner;
+            const image = repo.openGraphImageUrl;
+            const description = repo.description ?? "";
+            const lastCommit = repo.defaultBranchRef
+              ? repo.defaultBranchRef.target.committedDate
+              : "1970-01-01T00:00:00Z";
+            const stargazerCount = repo.stargazerCount;
+            const issuesCount = repo.openIssues.totalCount;
+            const languages = repo.languages.edges.map((lang) => ({
+              name: lang.node.name,
+              size: lang.size,
+            }));
+            const totalSize = repo.languages.totalSize;
+  
+            return {
+              id: crypto.randomUUID(),
+              image: image,
+              owner: nameWithOwner.split("/")[0],
+              name: nameWithOwner.split("/")[1],
+              description: description,
+              lastCommit: lastCommit,
+              stars: stargazerCount,
+              issuesCount: issuesCount,
+              languages: languages,
+              totalSize: totalSize,
+            };
+          })
+          .filter((repo: DataProps) => repo.name != ".github")
+          .sort(defaultSort)
+      );
+      setView("repos");
+      setLoading(false);
+    }catch(error){
+        setLoading(false);
+        return setReadmePreview(companyRepos.message)
+    }
+  }
 
   const onSetReadMe = async (readme: string) => {
     const foundReadme = showData.find(
       (repo) => `https://www.github.com/${repo.owner}/${repo.name}` === readme
     );
     if (foundReadme) {
-      let res = await fetch(
+      let readmeRepos = await get(
         `https://api.github.com/repos/${foundReadme.owner}/${foundReadme.name}/readme`
       );
-      let data = await res.json();
-      res = await fetch(data.download_url);
-      data = await res.text();
-      const showdown = require("showdown"),
-        converter = new showdown.Converter(),
-        text = data.replace(`<nobr>`, ""),
-        html = converter.makeHtml(text);
-      setReadmePreview(html);
-    }
+
+      try{
+        const downloadReadme = readmeRepos.download_url
+        let readme = await get(downloadReadme);
+          const showdown = require("showdown"),
+            converter = new showdown.Converter(),
+            text = readme.replace(`<nobr>`, ""),
+            html = converter.makeHtml(text);
+          setReadmePreview(html);
+        }catch(error){
+        if (readmeRepos.message){
+          setReadmePreview(readmeRepos.message)
+        }else{
+          setReadmePreview("this url is not exist")
+        }
+
+      }
+      }
   };
 
   const onSelectCompany = (company: string) => {
