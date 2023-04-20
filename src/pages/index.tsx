@@ -51,7 +51,7 @@ export default function Home() {
 
   const fetchRepos = async () => {
 
-    const repositories : { message?: string; repository: RepoProps }[] = await get ("https://os-il-api.vercel.app/api/reposdb1");
+    const repositories : { message?: string; repository: RepoProps }[] = await get ("https://os-il-api.vercel.app/api/reposdb");
     try{
       const organizedData = repositories
         .filter((proj) => proj !== null)
